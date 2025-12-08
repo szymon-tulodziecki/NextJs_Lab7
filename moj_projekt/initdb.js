@@ -192,7 +192,14 @@ async function initData() {
    `);
 
   for (const meal of dummyMeals) {
-    stmt.run(meal);
+    try {
+      stmt.run(meal);
+    } catch (error) {
+      // Ignore duplicate entries
+      if (error.code !== 'SQLITE_CONSTRAINT_UNIQUE') {
+        throw error;
+      }
+    }
   }
 }
 
