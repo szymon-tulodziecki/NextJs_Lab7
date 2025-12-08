@@ -1,1 +1,1 @@
-Link do deploy: [https://nextjslab7.netlify.app/]
+Link do deploy: [https://next-js-lab7.vercel.app/]
