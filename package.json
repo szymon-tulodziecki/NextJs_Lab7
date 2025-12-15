@@ -1,6 +1,16 @@
 {
   "dependencies": {
+    "@netlify/neon": "^0.1.0",
     "better-sqlite3": "^12.5.0",
+    "drizzle-orm": "^0.45.1",
     "next": "^16.0.7"
+  },
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "netlify dev:exec drizzle-kit migrate",
+    "db:studio": "netlify dev:exec drizzle-kit studio"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.8"
   }
 }

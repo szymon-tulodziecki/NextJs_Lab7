@@ -1,5 +1,14 @@
 const sql = require('better-sqlite3');
 const db = sql('meals.db');
+const { Client } = require('pg');
+require('dotenv').config();
+
+const POSTGRES_URL = process.env.NETLIFY_DB_CONNECTION_STRING;
+let pgClient;
+if (POSTGRES_URL) {
+   pgClient = new Client({ connectionString: POSTGRES_URL });
+   pgClient.connect();
+}
 
 const dummyMeals = [
   {
@@ -178,29 +187,50 @@ db.prepare(`
 `).run();
 
 async function initData() {
-  const stmt = db.prepare(`
-      INSERT INTO meals VALUES (
-         null,
-         @slug,
-         @title,
-         @image,
-         @summary,
-         @instructions,
-         @creator,
-         @creator_email
-      )
-   `);
+   const stmt = db.prepare(`
+         INSERT INTO meals VALUES (
+             null,
+             @slug,
+             @title,
+             @image,
+             @summary,
+             @instructions,
+             @creator,
+             @creator_email
+         )
+    `);
 
-  for (const meal of dummyMeals) {
-    try {
-      stmt.run(meal);
-    } catch (error) {
-      // Ignore duplicate entries
-      if (error.code !== 'SQLITE_CONSTRAINT_UNIQUE') {
-        throw error;
+   const pgInsert = `
+      INSERT INTO meals (slug, title, image, summary, instructions, creator, creator_email)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (slug) DO NOTHING
+   `;
+
+   for (const meal of dummyMeals) {
+      try {
+         stmt.run(meal);
+      } catch (error) {
+         // Ignore duplicate entries
+         if (error.code !== 'SQLITE_CONSTRAINT_UNIQUE') {
+            throw error;
+         }
       }
-    }
-  }
+      if (pgClient) {
+         try {
+            await pgClient.query(pgInsert, [
+               meal.slug,
+               meal.title,
+               meal.image,
+               meal.summary,
+               meal.instructions,
+               meal.creator,
+               meal.creator_email,
+            ]);
+         } catch (err) {
+            // Ignore duplicate entries or log error
+         }
+      }
+   }
 }
 
 initData();
