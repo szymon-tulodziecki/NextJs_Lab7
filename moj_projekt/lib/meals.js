@@ -1,6 +1,8 @@
+import { getPostgresClient } from './postgres.js';
 
 import { getPostgresClient } from './postgres.js';
 
+export async function getMeals() {
   const client = getPostgresClient();
   await client.connect();
   const res = await client.query('SELECT * FROM meals');
