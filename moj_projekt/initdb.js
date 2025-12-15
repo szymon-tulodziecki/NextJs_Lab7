@@ -1,13 +1,25 @@
-const sql = require('better-sqlite3');
-const db = sql('meals.db');
 const { Client } = require('pg');
 require('dotenv').config();
 
-const POSTGRES_URL = process.env.NETLIFY_DB_CONNECTION_STRING;
-let pgClient;
-if (POSTGRES_URL) {
-   pgClient = new Client({ connectionString: POSTGRES_URL });
-   pgClient.connect();
+const POSTGRES_URL =
+   process.env.NETLIFY_DB_CONNECTION_STRING ||
+   process.env.NETLIFY_DATABASE_URL ||
+   process.env.NETLIFY_DATABASE_URL_UNPOOLED ||
+   process.env.DATABASE_URL ||
+   process.env.NEON_DATABASE_URL;
+
+async function withPgClient(fn) {
+   if (!POSTGRES_URL) {
+      console.warn('No Postgres connection string set; skipping Postgres init');
+      return;
+   }
+   const client = new Client({ connectionString: POSTGRES_URL });
+   await client.connect();
+   try {
+      await fn(client);
+   } finally {
+      await client.end();
+   }
 }
 
 const dummyMeals = [
@@ -173,64 +185,46 @@ const dummyMeals = [
   },
 ];
 
-db.prepare(`
-   CREATE TABLE IF NOT EXISTS meals (
-       id INTEGER PRIMARY KEY AUTOINCREMENT,
-       slug TEXT NOT NULL UNIQUE,
-       title TEXT NOT NULL,
-       image TEXT NOT NULL,
-       summary TEXT NOT NULL,
-       instructions TEXT NOT NULL,
-       creator TEXT NOT NULL,
-       creator_email TEXT NOT NULL
-    )
-`).run();
-
 async function initData() {
-   const stmt = db.prepare(`
-         INSERT INTO meals VALUES (
-             null,
-             @slug,
-             @title,
-             @image,
-             @summary,
-             @instructions,
-             @creator,
-             @creator_email
-         )
+  // Create table and insert dummyMeals into Postgres
+  await withPgClient(async (client) => {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS meals (
+        id SERIAL PRIMARY KEY,
+        slug TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        image TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        instructions TEXT NOT NULL,
+        creator TEXT NOT NULL,
+        creator_email TEXT NOT NULL
+      );
     `);
 
-   const pgInsert = `
+    const pgInsert = `
       INSERT INTO meals (slug, title, image, summary, instructions, creator, creator_email)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (slug) DO NOTHING
-   `;
+    `;
 
-   for (const meal of dummyMeals) {
+    for (const meal of dummyMeals) {
       try {
-         stmt.run(meal);
-      } catch (error) {
-         // Ignore duplicate entries
-         if (error.code !== 'SQLITE_CONSTRAINT_UNIQUE') {
-            throw error;
-         }
+        await client.query(pgInsert, [
+          meal.slug,
+          meal.title,
+          meal.image,
+          meal.summary,
+          meal.instructions,
+          meal.creator,
+          meal.creator_email,
+        ]);
+      } catch (err) {
+        console.error('Insert error for', meal.slug, err?.message || err);
       }
-      if (pgClient) {
-         try {
-            await pgClient.query(pgInsert, [
-               meal.slug,
-               meal.title,
-               meal.image,
-               meal.summary,
-               meal.instructions,
-               meal.creator,
-               meal.creator_email,
-            ]);
-         } catch (err) {
-            // Ignore duplicate entries or log error
-         }
-      }
-   }
+    }
+  });
 }
 
-initData();
+initData().catch((err) => {
+  console.error('initData failed:', err?.message || err);
+});
